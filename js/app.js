@@ -24,6 +24,14 @@
       st_prepare: 'تحضير الصورة…', st_color: 'تصحيح الألوان…', st_denoise: 'إزالة التشويش…',
       st_beauty: 'تنعيم البشرة…', st_detail: 'استعادة التفاصيل…', st_finish: 'اللمسات الأخيرة…', st_done: 'تم!', st_upscale: 'تكبير الدقة…',
       saved: 'تم حفظ الصورة ✓', badFile: 'الملف ليس صورة صالحة', scaleLimited: 'تم تقليل التكبير لتجنّب تجاوز حدود الذاكرة',
+      aiTitle: 'أدوات الذكاء الاصطناعي', ai_bg: 'إزالة الخلفية', ai_color: 'تلوين الصورة', ai_face: 'ترميم الوجوه',
+      ai_undo: 'إلغاء تعديلات الذكاء الاصطناعي', cloudTag: 'سحابي', freeTag: 'مجاني',
+      bgTitle: 'الخلفية', bg_transparent: 'شفافة', bg_white: 'بيضاء', bg_blur: 'ضبابية', bg_color: 'لون',
+      aiSettings: 'إعدادات الذكاء الاصطناعي (fal.ai)', falKey: 'مفتاح fal.ai API', falKeyHint: 'يُحفظ على جهازك فقط ويُرسل إلى fal.ai وحدها. احصل عليه من fal.ai/dashboard/keys',
+      cloudColor: 'استخدام السحابة للتلوين (أسرع وأدق على الجوال)', saveKey: 'حفظ', keySaved: 'تم حفظ المفتاح ✓',
+      st_loadModel: 'تحميل النموذج… (مرة واحدة فقط)', st_thinking: 'الذكاء الاصطناعي يعمل…', st_upload: 'إرسال الصورة…', st_download: 'استلام النتيجة…',
+      needKey: 'هذه الميزة تحتاج مفتاح fal.ai — أضيفيه في الإعدادات', badKey: 'مفتاح fal.ai غير صحيح', aiFail: 'تعذّر تنفيذ العملية: ', aiLoading: 'أدوات الذكاء الاصطناعي ما زالت تُحمَّل، حاولي بعد لحظة',
+      cloudNote: 'سيتم إرسال الصورة إلى fal.ai لمعالجتها.',
     },
     en: {
       appName: 'Beauty Enhance',
@@ -46,6 +54,14 @@
       st_prepare: 'Preparing…', st_color: 'Correcting colors…', st_denoise: 'Removing noise…',
       st_beauty: 'Smoothing skin…', st_detail: 'Restoring detail…', st_finish: 'Finishing touches…', st_done: 'Done!', st_upscale: 'Upscaling…',
       saved: 'Photo saved ✓', badFile: 'That file is not a valid image', scaleLimited: 'Upscale reduced to stay within memory limits',
+      aiTitle: 'AI tools', ai_bg: 'Remove background', ai_color: 'Colorize photo', ai_face: 'Restore faces',
+      ai_undo: 'Undo AI edits', cloudTag: 'Cloud', freeTag: 'Free',
+      bgTitle: 'Background', bg_transparent: 'Transparent', bg_white: 'White', bg_blur: 'Blurred', bg_color: 'Color',
+      aiSettings: 'AI settings (fal.ai)', falKey: 'fal.ai API key', falKeyHint: 'Stored on this device only and sent only to fal.ai. Get one at fal.ai/dashboard/keys',
+      cloudColor: 'Use the cloud for colorizing (faster and better on phones)', saveKey: 'Save', keySaved: 'Key saved ✓',
+      st_loadModel: 'Downloading model… (first time only)', st_thinking: 'AI at work…', st_upload: 'Sending photo…', st_download: 'Receiving result…',
+      needKey: 'This feature needs a fal.ai key — add it in AI settings', badKey: 'The fal.ai key was rejected', aiFail: 'Could not finish: ', aiLoading: 'AI tools are still loading, try again in a moment',
+      cloudNote: 'The photo will be sent to fal.ai for processing.',
     },
   };
   let lang = 'ar';
@@ -79,7 +95,11 @@
 
   // ---------- State ----------
   const state = {
-    source: null,        // ImageBitmap/HTMLImageElement of the original (possibly downscaled)
+    original: null,      // canvas: the photo as loaded (possibly downscaled)
+    source: null,        // canvas: original + any AI edits; the enhance pipeline starts here
+    aiEdited: false,
+    hasAlpha: false,     // true after background removal
+    bg: 'transparent',   // transparent | white | blur | #rrggbb
     srcW: 0, srcH: 0,
     scale: 1,
     effectiveScale: 1,
@@ -231,7 +251,9 @@
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
-      state.source = c; state.srcW = w; state.srcH = h; state.base = null;
+      state.original = c; state.source = c; state.srcW = w; state.srcH = h; state.base = null;
+      state.aiEdited = false; state.hasAlpha = false; state.bg = 'transparent';
+      updateAiUi();
       uploadView.hidden = true; editorView.hidden = false;
       window.scrollTo(0, 0);
       const known = MODES.some(function (m) { return m.id === state.mode; });
@@ -264,7 +286,7 @@
     const bctx = beforeCanvas.getContext('2d');
     // "Before" shows the original pixels (nearest-neighbour when upscaled) for an honest comparison
     bctx.imageSmoothingEnabled = false;
-    bctx.drawImage(state.source, 0, 0, cw, ch);
+    bctx.drawImage(state.original, 0, 0, cw, ch);
     const tmp = cur.getContext('2d');
     state.base = tmp.getImageData(0, 0, cw, ch);
     fitStage();
@@ -300,7 +322,8 @@
       });
       if (result.id !== state.jobId) return; // a newer job superseded this one
       const out = new ImageData(new Uint8ClampedArray(result.data), state.base.width, state.base.height);
-      afterCanvas.getContext('2d').putImageData(out, 0, 0);
+      lastResult = out;
+      renderAfter();
       meta.textContent = state.srcW + '×' + state.srcH + '  →  ' + state.base.width + '×' + state.base.height +
         (state.effectiveScale > 1 ? '  (' + state.effectiveScale + '×)' : '');
       showBusy(false);
@@ -310,6 +333,115 @@
       toast(String(err.message || err));
     }
   }
+
+  // ---------- Output compositing (background fill) ----------
+  let lastResult = null;
+  const layer = document.createElement('canvas');
+  function renderAfter() {
+    if (!lastResult) return;
+    const w = lastResult.width, h = lastResult.height;
+    layer.width = w; layer.height = h;
+    layer.getContext('2d').putImageData(lastResult, 0, 0);
+    const ctx = afterCanvas.getContext('2d');
+    ctx.save();
+    ctx.clearRect(0, 0, w, h);
+    if (state.hasAlpha && state.bg !== 'transparent') {
+      if (state.bg === 'white') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); }
+      else if (state.bg === 'blur') {
+        ctx.filter = 'blur(' + Math.round(Math.max(w, h) / 60) + 'px)';
+        ctx.drawImage(beforeCanvas, -w * 0.03, -h * 0.03, w * 1.06, h * 1.06);
+        ctx.filter = 'none';
+      } else { ctx.fillStyle = state.bg; ctx.fillRect(0, 0, w, h); }
+    }
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+    stage.classList.toggle('checker', state.hasAlpha && state.bg === 'transparent');
+  }
+
+  // ---------- AI tools ----------
+  const aiButtons = { bg: $('aiBg'), color: $('aiColor'), face: $('aiFace') };
+  function getKey() { try { return localStorage.getItem('be-fal-key') || ''; } catch (e) { return ''; } }
+  function useCloudColor() { try { return localStorage.getItem('be-cloud-color') === '1'; } catch (e) { return false; } }
+
+  function updateAiUi() {
+    $('bgOptions').hidden = !state.hasAlpha;
+    $('aiUndo').hidden = !state.aiEdited;
+    document.querySelectorAll('#bgOptions [data-bg]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.bg === state.bg || (b.dataset.bg === 'color' && /^#/.test(state.bg)));
+    });
+  }
+
+  function aiReady() {
+    if (window.BeautyAI) return true;
+    toast(t('aiLoading'));
+    return false;
+  }
+
+  async function runAi(kind) {
+    if (!state.source || !aiReady()) return;
+    const progress = function (p, stage) {
+      busyBar.style.width = Math.round(p * 100) + '%';
+      busyText.textContent = t('st_' + stage);
+    };
+    const cloud = kind === 'face' || (kind === 'color' && useCloudColor());
+    if (cloud && !getKey()) { $('aiSettingsBox').open = true; $('tune').open = false; $('falKey').focus(); toast(t('needKey')); return; }
+    Object.values(aiButtons).forEach(function (b) { b.disabled = true; });
+    showBusy(true);
+    busyText.textContent = cloud ? t('st_upload') : t('st_loadModel');
+    try {
+      let canvas;
+      if (kind === 'bg') canvas = await window.BeautyAI.removeBackground(state.source, progress);
+      else if (cloud) canvas = await window.BeautyAI.cloudRun(kind === 'face' ? 'face' : 'colorize', state.source, getKey(), progress);
+      else canvas = await window.BeautyAI.colorizeLocal(state.source, progress);
+      // Bring the result back to the working size so before/after line up.
+      if (canvas.width !== state.srcW || canvas.height !== state.srcH) {
+        const c = document.createElement('canvas');
+        c.width = state.srcW; c.height = state.srcH;
+        const cx = c.getContext('2d');
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(canvas, 0, 0, c.width, c.height);
+        canvas = c;
+      }
+      state.source = canvas;
+      state.aiEdited = true;
+      if (kind === 'bg') { state.hasAlpha = true; state.bg = 'transparent'; $('formatSel').value = 'image/png'; }
+      state.base = null;
+      updateAiUi();
+      await enhance();
+    } catch (err) {
+      console.error(err);
+      showBusy(false);
+      const m = String(err && err.message || err);
+      toast(m === 'NO_KEY' ? t('needKey') : m === 'BAD_KEY' ? t('badKey') : t('aiFail') + m);
+    } finally {
+      Object.values(aiButtons).forEach(function (b) { b.disabled = false; });
+    }
+  }
+
+  aiButtons.bg.addEventListener('click', function () { runAi('bg'); });
+  aiButtons.color.addEventListener('click', function () { runAi('color'); });
+  aiButtons.face.addEventListener('click', function () { runAi('face'); });
+  $('aiUndo').addEventListener('click', function () {
+    state.source = state.original; state.aiEdited = false; state.hasAlpha = false; state.bg = 'transparent';
+    state.base = null; updateAiUi(); enhance();
+  });
+  $('bgOptions').addEventListener('click', function (e) {
+    const b = e.target.closest('[data-bg]');
+    if (!b) return;
+    if (b.dataset.bg === 'color') { $('bgColor').click(); return; }
+    state.bg = b.dataset.bg; updateAiUi(); renderAfter();
+  });
+  $('bgColor').addEventListener('input', function (e) { state.bg = e.target.value; updateAiUi(); renderAfter(); });
+
+  $('falKey').value = getKey();
+  $('cloudColor').checked = useCloudColor();
+  $('saveKey').addEventListener('click', function () {
+    try { localStorage.setItem('be-fal-key', $('falKey').value.trim()); } catch (e) { /* ignore */ }
+    toast(t('keySaved'));
+  });
+  $('cloudColor').addEventListener('change', function (e) {
+    try { localStorage.setItem('be-cloud-color', e.target.checked ? '1' : '0'); } catch (err) { /* ignore */ }
+  });
 
   // ---------- Before/after slider ----------
   function fitStage() {
@@ -354,7 +486,15 @@
   $('downloadBtn').addEventListener('click', function () {
     const type = $('formatSel').value;
     const ext = type === 'image/png' ? 'png' : 'jpg';
-    afterCanvas.toBlob(function (blob) {
+    let src = afterCanvas;
+    if (type === 'image/jpeg' && state.hasAlpha) {
+      src = document.createElement('canvas');
+      src.width = afterCanvas.width; src.height = afterCanvas.height;
+      const cx = src.getContext('2d');
+      cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, src.width, src.height);
+      cx.drawImage(afterCanvas, 0, 0);
+    }
+    src.toBlob(function (blob) {
       if (!blob) return;
       const file = new File([blob], state.fileName + '-enhanced.' + ext, { type: type });
       // Mobile: offer the share sheet so it can go straight to the gallery
@@ -398,7 +538,7 @@
   $('skinOnly').addEventListener('change', function (e) { state.skinOnly = e.target.checked; enhance(); });
   $('resetBtn').addEventListener('click', function () { selectMode('auto'); });
   $('newBtn').addEventListener('click', function () {
-    state.source = null; state.base = null;
+    state.source = null; state.original = null; state.base = null; lastResult = null;
     editorView.hidden = true; uploadView.hidden = false;
   });
   $('langBtn').addEventListener('click', function () {

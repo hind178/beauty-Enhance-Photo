@@ -11,6 +11,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.bundle.min.mjs",
+      "onnxruntime-web/webgpu": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.webgpu.bundle.min.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -70,7 +78,7 @@
             <div class="bar"><span id="busyBar"></span></div>
           </div>
         </div>
-        <div class="meta muted small" id="meta"></div>
+        <div class="meta muted small" id="meta" dir="ltr"></div>
       </div>
 
       <aside class="panel">
@@ -83,6 +91,47 @@
           <button type="button" data-scale="2">2× HD</button>
           <button type="button" data-scale="4">4× Ultra</button>
         </div>
+
+        <h2 class="panel-title" data-i18n="aiTitle">أدوات الذكاء الاصطناعي</h2>
+        <div class="ai-tools">
+          <button type="button" class="ai-btn" id="aiBg">
+            <span class="ai-ico" aria-hidden="true">✂</span><span data-i18n="ai_bg">إزالة الخلفية</span><span class="pill free" data-i18n="freeTag">مجاني</span>
+          </button>
+          <button type="button" class="ai-btn" id="aiColor">
+            <span class="ai-ico" aria-hidden="true">🎨</span><span data-i18n="ai_color">تلوين الصورة</span><span class="pill free" data-i18n="freeTag">مجاني</span>
+          </button>
+          <button type="button" class="ai-btn" id="aiFace">
+            <span class="ai-ico" aria-hidden="true">☺</span><span data-i18n="ai_face">ترميم الوجوه</span><span class="pill cloud" data-i18n="cloudTag">سحابي</span>
+          </button>
+        </div>
+        <div id="bgOptions" class="bg-options" hidden>
+          <span class="muted small" data-i18n="bgTitle">الخلفية</span>
+          <div class="chips">
+            <button type="button" class="chip" data-bg="transparent" data-i18n="bg_transparent">شفافة</button>
+            <button type="button" class="chip" data-bg="white" data-i18n="bg_white">بيضاء</button>
+            <button type="button" class="chip" data-bg="blur" data-i18n="bg_blur">ضبابية</button>
+            <button type="button" class="chip" data-bg="color" data-i18n="bg_color">لون</button>
+            <input type="color" id="bgColor" value="#ff8fb8" aria-label="Background color" class="color-input">
+          </div>
+        </div>
+        <button type="button" class="link-btn" id="aiUndo" data-i18n="ai_undo" hidden>إلغاء تعديلات الذكاء الاصطناعي</button>
+
+        <details class="tune" id="aiSettingsBox">
+          <summary><span data-i18n="aiSettings">إعدادات الذكاء الاصطناعي (fal.ai)</span><span class="chev" aria-hidden="true">⌄</span></summary>
+          <div class="key-row">
+            <label for="falKey" class="small" data-i18n="falKey">مفتاح fal.ai API</label>
+            <div class="row">
+              <input type="password" id="falKey" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx:xxxxxxxx">
+              <button type="button" class="ghost-btn" id="saveKey" data-i18n="saveKey">حفظ</button>
+            </div>
+            <p class="muted small" data-i18n="falKeyHint"></p>
+            <p class="muted small" data-i18n="cloudNote"></p>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="cloudColor">
+            <span data-i18n="cloudColor">استخدام السحابة للتلوين</span>
+          </label>
+        </details>
 
         <details class="tune" id="tune">
           <summary><span data-i18n="tuneTitle">ضبط يدوي</span><span class="chev" aria-hidden="true">⌄</span></summary>
@@ -116,5 +165,6 @@
 
   <script src="js/enhance.js"></script>
   <script src="js/app.js"></script>
+  <script type="module" src="js/ai.js"></script>
 </body>
 </html>
