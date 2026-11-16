@@ -1,1 +1,3 @@
 node_modules/
+videos/*/stills/
+videos/*/fonts/*.woff2
